@@ -38,6 +38,13 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 // Create Servo object
 Servo sg90;
 
+// Create MFRC522
+MFRC522 rfid(10, 9);
+
+// Allowed tags to unlock
+const byte NO_TAGS = 1;
+String tag_uids[NO_TAGS] = {"9A A5 D4 BF" /*, "75 14 69 21"*/};
+
 char correct_pass[4] = {'2', '7', '4', '0'};
 char password[4];
 uint8_t i;
@@ -57,18 +64,34 @@ void setup() {
   lcd.backlight();
   lcd.clear();
 
-  lcd.print("Enter Password");
+  lcd.print("Scan tag");
   lcd.setCursor(0, 1);
 
   // Set pin for servo
   sg90.attach(SERVO_PIN);
   // Initial position to 0
   sg90.write(0);
+  
+  // Init SPI bus
+  SPI.begin();
+
+  // Init MFRC522
+  rfid.PCD_Init();
 
 }
 
-void deleteLastKey(int i) {
+byte searchTagUID(String tag) {
+  for (uint8_t j = 0; j < NO_TAGS; j++)
+  {
+    if (tag.substring(1) == tag_uids[j])
+      return 1;
+  }
+  return 0;
+}
 
+
+void deleteLastKey(int i) {
+  // remove last typed key from LCD
   lcd.setCursor(i, 1);
   lcd.print(" ");
   lcd.setCursor(i, 1);
@@ -76,28 +99,62 @@ void deleteLastKey(int i) {
 
 void loop() {
   // put your main code here, to run repeatedly:
+
+    if (!rfid.PICC_IsNewCardPresent())
+    {
+      return;
+    }
+    // Select one of the cards
+    if (!rfid.PICC_ReadCardSerial())
+    {
+      return;
+    }
+   //Reading from the card
+   String tag = "";
+   for (byte j = 0; j < rfid.uid.size; j++)
+   {
+     tag.concat(String(rfid.uid.uidByte[j] < 0x10 ? " 0" : " "));
+     tag.concat(String(rfid.uid.uidByte[j], HEX));
+   }
+   tag.toUpperCase();
+   Serial.print(tag);
+   if (!searchTagUID(tag))
+   {
+    // Do not allow access
+   }
+
+    
+  
   // Get key value if pressed
   char key = kp.getKey();
 
   
-  if (key){
+  if (key)
+  {
     if (key == '*')
     {
-      if (i > 0) {
+      if (i > 0)
+      {
         i--;
         deleteLastKey(i);
       }
-    } else if (key == '#') {
+    } else if (key == '#' && i == 4)
+    {
       pass_done = 1;
-    } else if (i < 4) {
+    }
+    else if (i < 4)
+    {
       Serial.print(key);
-      // Clear LCD display and print character
+      // Print character
       lcd.print(key);
       password[i] = key;
       i++;
     }
   }
-  if (i == 4 && pass_done){
+
+  // action after password is entered
+  if (i == 4 && pass_done)
+  {
     // reset counter
     i = 0;
     // reset flag
