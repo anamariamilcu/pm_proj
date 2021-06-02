@@ -9,6 +9,8 @@
 #define RED_LED 6
 #define SERVO_PIN 8
 #define BUZZ_PIN 5
+#define SS_PIN 10
+#define RST_PIN 9
 
 // Constants for row and column sizes
 const byte ROWS = 4;
@@ -39,9 +41,10 @@ LiquidCrystal_I2C lcd(0x27, 16, 2);
 Servo sg90;
 
 // Create MFRC522
-MFRC522 rfid(10, 9);
+MFRC522 rfid(SS_PIN, RST_PIN);
 
 // Allowed tags to unlock
+byte search_tag;
 const byte NO_TAGS = 1;
 String tag_uids[NO_TAGS] = {"9A A5 D4 BF" /*, "75 14 69 21"*/};
 
@@ -64,8 +67,7 @@ void setup() {
   lcd.backlight();
   lcd.clear();
 
-  lcd.print("Scan tag");
-  lcd.setCursor(0, 1);
+  lcd.print("Scan Tag");
 
   // Set pin for servo
   sg90.attach(SERVO_PIN);
@@ -77,6 +79,8 @@ void setup() {
 
   // Init MFRC522
   rfid.PCD_Init();
+  // search for tag firstly
+  search_tag = 1;
 
 }
 
@@ -97,97 +101,139 @@ void deleteLastKey(int i) {
   lcd.setCursor(i, 1);
 }
 
+
+void allowTag() {
+  lcd.clear();
+  lcd.print("Tag is allowed");
+  digitalWrite(GREEN_LED, HIGH);
+  delay(3000);
+  digitalWrite(GREEN_LED, LOW);
+  lcd.clear();
+
+  lcd.print("Enter Password");
+  lcd.setCursor(0, 1);
+  search_tag = 2;
+}
+
+void denyTag() {
+  lcd.clear();
+  lcd.print("Tag unregistered");
+  digitalWrite(RED_LED, HIGH);
+  tone(BUZZ_PIN, 1000);
+  delay(3000);
+  digitalWrite(RED_LED, LOW);
+  noTone(BUZZ_PIN);
+  lcd.clear();
+  lcd.print("Scan Tag");
+}
+
+void permitAccess() {
+  lcd.clear();
+  lcd.print("Access permitted");
+  // Door opens
+  sg90.write(90);
+  digitalWrite(GREEN_LED, HIGH);
+  delay(5000);
+  digitalWrite(GREEN_LED, LOW);
+  lcd.clear();
+  // Door closes
+  sg90.write(0);
+}
+
+void denyAccess() {
+  lcd.clear();
+  lcd.print("Access denied");
+  digitalWrite(RED_LED, HIGH);
+  tone(BUZZ_PIN, 1000);
+  delay(5000);
+  digitalWrite(RED_LED, LOW);
+  noTone(BUZZ_PIN);
+  lcd.clear();
+}
+
 void loop() {
   // put your main code here, to run repeatedly:
 
-    if (!rfid.PICC_IsNewCardPresent())
+    // search for rfid tag
+    if (search_tag == 1) 
     {
-      return;
+      if (!rfid.PICC_IsNewCardPresent())
+      {
+        return;
+      }
+      // Select one of the cards
+      if (!rfid.PICC_ReadCardSerial())
+      {
+        return;
+      }
+      //Reading from the card
+      String tag = "";
+      for (byte j = 0; j < rfid.uid.size; j++)
+      {
+        tag.concat(String(rfid.uid.uidByte[j] < 0x10 ? " 0" : " "));
+        tag.concat(String(rfid.uid.uidByte[j], HEX));
+      }
+      tag.toUpperCase();
+      Serial.print(tag);
+      if (!searchTagUID(tag))
+      {
+        // Do not allow access
+        denyTag();
+      } else
+      {
+        // Allow access
+        allowTag();
+      }
     }
-    // Select one of the cards
-    if (!rfid.PICC_ReadCardSerial())
-    {
-      return;
-    }
-   //Reading from the card
-   String tag = "";
-   for (byte j = 0; j < rfid.uid.size; j++)
-   {
-     tag.concat(String(rfid.uid.uidByte[j] < 0x10 ? " 0" : " "));
-     tag.concat(String(rfid.uid.uidByte[j], HEX));
-   }
-   tag.toUpperCase();
-   Serial.print(tag);
-   if (!searchTagUID(tag))
-   {
-    // Do not allow access
-   }
 
     
-  
-  // Get key value if pressed
-  char key = kp.getKey();
+  if (search_tag == 2)
+  {
+    // Get key value if pressed
+    char key = kp.getKey();
 
   
-  if (key)
-  {
-    if (key == '*')
+    if (key)
     {
-      if (i > 0)
+      if (key == '*' && i > 0)
       {
         i--;
         deleteLastKey(i);
       }
-    } else if (key == '#' && i == 4)
-    {
-      pass_done = 1;
-    }
-    else if (i < 4)
-    {
-      Serial.print(key);
-      // Print character
-      lcd.print(key);
-      password[i] = key;
-      i++;
-    }
-  }
-
-  // action after password is entered
-  if (i == 4 && pass_done)
-  {
-    // reset counter
-    i = 0;
-    // reset flag
-    pass_done = 0;
-    delay(1000);
-    // If password is matched
-    if (!(strncmp(password, correct_pass, 4))) 
+      else if (key == '#' && i == 4)
       {
-        lcd.clear();
-        lcd.print("Access permitted");
-        // Door opens
-        sg90.write(90);
-        digitalWrite(GREEN_LED, HIGH);
-        delay(5000);
-        digitalWrite(GREEN_LED, LOW);
-        lcd.clear();
-        // Door closes
-        sg90.write(0);
+        pass_done = 1;
+      }
+      else if (i < 4)
+      {
+        Serial.print(key);
+        // Print character
+        lcd.print(key);
+        password[i] = key;
+        i++;
+      }
+    }
+
+    // action after password is entered
+    if (i == 4 && pass_done)
+    {
+      // reset counter
+      i = 0;
+      // reset flag
+      pass_done = 0;
+      delay(1000);
+      // If password is matched
+      if (!(strncmp(password, correct_pass, 4))) 
+      {
+        permitAccess();
       }
       // If password is not matched
       else
       {
-        lcd.clear();
-        lcd.print("Access denied");
-        digitalWrite(RED_LED, HIGH);
-        tone(BUZZ_PIN, 1000);
-        delay(5000);
-        digitalWrite(RED_LED, LOW);
-        noTone(BUZZ_PIN);
-        lcd.clear();
+        denyAccess();
       }
-     lcd.print("Enter Password");
-     lcd.setCursor(0, 1);
-  }
-
+      lcd.print("Scan tag");
+      search_tag = 1;
+    }
+  } 
 }
