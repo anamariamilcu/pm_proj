@@ -44,13 +44,14 @@ Servo sg90;
 MFRC522 rfid(SS_PIN, RST_PIN);
 
 // Allowed tags to unlock
-byte search_tag;
-const byte NO_TAGS = 1;
-String tag_uids[NO_TAGS] = {"9A A5 D4 BF" /*, "75 14 69 21"*/};
+byte state;
+const byte NO_MAX_TAGS = 5;
+byte NO_TAGS = 1;
+String tag_uids[NO_MAX_TAGS] = {"9A A5 D4 BF" /*, "75 14 69 21"*/};
 
 char correct_pass[4] = {'2', '7', '4', '0'};
 char password[4];
-uint8_t i;
+uint8_t count;
 uint8_t pass_done;
 
 
@@ -80,7 +81,7 @@ void setup() {
   // Init MFRC522
   rfid.PCD_Init();
   // search for tag firstly
-  search_tag = 1;
+  state = 1;
 
 }
 
@@ -94,11 +95,12 @@ byte searchTagUID(String tag) {
 }
 
 
-void deleteLastKey(int i) {
+void deleteLastKey() {
   // remove last typed key from LCD
-  lcd.setCursor(i, 1);
+  count--;
+  lcd.setCursor(count, 1);
   lcd.print(" ");
-  lcd.setCursor(i, 1);
+  lcd.setCursor(count, 1);
 }
 
 
@@ -112,7 +114,7 @@ void allowTag() {
 
   lcd.print("Enter Password");
   lcd.setCursor(0, 1);
-  search_tag = 2;
+  state = 2;
 }
 
 void denyTag() {
@@ -155,7 +157,7 @@ void loop() {
   // put your main code here, to run repeatedly:
 
     // search for rfid tag
-    if (search_tag == 1) 
+    if (state == 1) 
     {
       if (!rfid.PICC_IsNewCardPresent())
       {
@@ -187,7 +189,7 @@ void loop() {
     }
 
     
-  if (search_tag == 2)
+  if (state == 2)
   {
     // Get key value if pressed
     char key = kp.getKey();
@@ -195,30 +197,29 @@ void loop() {
   
     if (key)
     {
-      if (key == '*' && i > 0)
+      if (key == '*' && count > 0)
       {
-        i--;
-        deleteLastKey(i);
+        deleteLastKey();
       }
-      else if (key == '#' && i == 4)
+      else if (key == '#' && count == 4)
       {
         pass_done = 1;
       }
-      else if (i < 4)
+      else if (count < 4)
       {
         Serial.print(key);
         // Print character
         lcd.print(key);
-        password[i] = key;
-        i++;
+        password[count] = key;
+        count++;
       }
     }
 
     // action after password is entered
-    if (i == 4 && pass_done)
+    if (count == 4 && pass_done)
     {
       // reset counter
-      i = 0;
+      count = 0;
       // reset flag
       pass_done = 0;
       delay(1000);
@@ -233,7 +234,7 @@ void loop() {
         denyAccess();
       }
       lcd.print("Scan tag");
-      search_tag = 1;
+      state = 1;
     }
   } 
 }
